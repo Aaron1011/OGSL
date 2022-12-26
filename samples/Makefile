@@ -2,8 +2,8 @@ CURRENT_DIR = $(shell pwd)
 LIBS = $(shell ls libs)
 LIB_PATH = $(foreach d, $(LIBS), -library-path+=./libs/$d)
 SRC_PATH = -source-path+=./src/
-FILE = OGSLEditor
-#FILE = RayTracing
+#FILE = OGSLEditor
+FILE = RayTracing
 #FILE = Sample
 OPT = -swf-version=37
 DEBUG = true

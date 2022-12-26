@@ -26,12 +26,12 @@ package {
 	import flash.geom.*;
 
 	/**
-	 * Real-time ray tracing
+	 * Real-time ray tracing demo
 	 * @author saharan
 	 */
 	[SWF(width = "640", height = "480", frameRate = "60")]
 	public class RayTracing extends Sprite {
-		private var s3d:Stage3D;
+		private var stage3D:Stage3D;
 		private var c3d:Context3D;
 		private var indexBuffer:IndexBuffer3D;
 		private var ogsl:OGSL;
@@ -48,20 +48,19 @@ package {
 
 		private function init(e:Event = null):void {
 			removeEventListener(Event.ADDED_TO_STAGE, init);
-
-			s3d = stage.stage3Ds[0];
-			s3d.addEventListener(Event.CONTEXT3D_CREATE, onCreateContext3D);
-			s3d.requestContext3D(Context3DRenderMode.AUTO, Context3DProfile.STANDARD_CONSTRAINED);
+			//
+			stage3D = stage.stage3Ds[0];
+			stage3D.addEventListener(Event.CONTEXT3D_CREATE, onCreateContext3D);
+			stage3D.requestContext3D(Context3DRenderMode.AUTO, Context3DProfile.STANDARD_CONSTRAINED);
 		}
 
 		private function onCreateContext3D(e:Event):void {
-			c3d = s3d.context3D;
+			c3d = stage3D.context3D;
 
 			c3d.enableErrorChecking = true;
 			c3d.configureBackBuffer(WIDTH, HEIGHT, 0);
 
-			ogsl = new OGSL();
-			ogsl.setLogFunction(function(s:String):void { // set log function
+			ogsl = new OGSL(function(s:String):void {
 				trace(s);
 			});
 			ogsl.compile(OGSL_SOURCE);
@@ -97,6 +96,19 @@ package {
 			]), 0, 6);
 		}
 
+		[Embed(source = "/cube0.jpg")]
+		private static const CUBE_0:Class;
+		[Embed(source = "/cube1.jpg")]
+		private static const CUBE_1:Class;
+		[Embed(source = "/cube2.jpg")]
+		private static const CUBE_2:Class;
+		[Embed(source = "/cube3.jpg")]
+		private static const CUBE_3:Class;
+		[Embed(source = "/cube4.jpg")]
+		private static const CUBE_4:Class;
+		[Embed(source = "/cube5.jpg")]
+		private static const CUBE_5:Class;
+
 		private function createProgram():void {
 			var assembler:AGALMiniAssembler = new AGALMiniAssembler();
 
@@ -107,6 +119,26 @@ package {
 			);
 			c3d.setProgram(program);
 			ogsl.setDefaultConstants();
+			var cube:CubeTexture = c3d.createCubeTexture(512, Context3DTextureFormat.BGRA, false);
+			uploadMip(cube, 0, Bitmap(new CUBE_0()).bitmapData);
+			uploadMip(cube, 1, Bitmap(new CUBE_1()).bitmapData);
+			uploadMip(cube, 2, Bitmap(new CUBE_2()).bitmapData);
+			uploadMip(cube, 3, Bitmap(new CUBE_3()).bitmapData);
+			uploadMip(cube, 4, Bitmap(new CUBE_4()).bitmapData);
+			uploadMip(cube, 5, Bitmap(new CUBE_5()).bitmapData);
+			ogsl.setTexture("bg", cube);
+		}
+
+		private function uploadMip(tex:CubeTexture, side:int, bmd:BitmapData):void {
+			var size:int = bmd.width;
+			var lv:int = 0;
+			while (size > 0) {
+				var mip:BitmapData = new BitmapData(size, size, false);
+				mip.draw(bmd, new Matrix(size / bmd.width, 0, 0, size / bmd.height), null, null, null, true);
+				tex.uploadFromBitmapData(mip, side, lv);
+				size >>= 1;
+				lv++;
+			}
 		}
 
 		private function loop(e:Event):void {
@@ -130,9 +162,9 @@ package {
 			ogsl.setFragmentConstantsFromNumber("sphereRadius1", r1);
 			ogsl.setFragmentConstantsFromNumber("sphereRadius2", r2);
 			ogsl.setFragmentConstantsFromNumber("sphereRadius3", r3);
-			var halfWidth:Number = WIDTH / 2;
-			var halfHeight:Number = HEIGHT / 2;
-			ogsl.setFragmentConstantsFromVector("mousePos", new <Number>[(mx - halfWidth) / halfWidth, (halfHeight - my) / halfHeight]);
+			var hw:Number = WIDTH / 2;
+			var hh:Number = HEIGHT / 2;
+			ogsl.setFragmentConstantsFromVector("mousePos", new <Number>[(mx - hw) / hw, (hh - my) / hh]);
 			ogsl.setFragmentConstantsFromNumber("time", count / 60);
 			ogsl.setFragmentConstantsFromNumber("aspect", WIDTH / HEIGHT);
 			c3d.drawTriangles(indexBuffer);
@@ -165,6 +197,7 @@ program fragment {
 	uniform spherePos3:vec3, sphereColor3:vec3, sphereRadius3:float;
 	uniform groundColor1:vec3, groundColor2:vec3;
 	uniform lightPos:vec3;
+	uniform bg:texture;
 
 	function main():void {
 		// set screen pos
@@ -182,12 +215,12 @@ program fragment {
 		// set ray data
 		var rayPos:vec3 = cameraPos;
 		var rayDir:vec3 = normalize(cameraZ * distanceToScreen + cameraX * screenPos.x + cameraY * screenPos.y);
-
 		var t:float, n:vec3, tmin:float, nmin:vec3, cmin:vec3;
-		var state:float, goNext:float, hitCount:float;
+		var state:float, goNext:float, hitCount:float, addCubeTex:float;
 
 		goNext = 1;
 		hitCount = 0;
+		addCubeTex = 0;
 
 		loop(3) {
 			if (goNext) {
@@ -225,10 +258,11 @@ program fragment {
 					state = 2; // hit to sphere
 				}
 
+				hitCount += 1;
 				if (state == 0) { // did not hit
+					addCubeTex = 1;
 					goNext = 0;
 				} else {
-					hitCount += 1;
 					rayPos += rayDir * tmin;
 					rayDir = reflect(rayDir, nmin);
 					rayPos += rayDir * 0.0001;
@@ -258,8 +292,9 @@ program fragment {
 				}
 			}
 		}
-		if (hitCount == 0) output.rgb = bgColor;
-		else output.rgb /= hitCount;
+		var texColor:vec3 = texCube(bg, rayDir, linear).rgb;
+		if (addCubeTex) output.rgb += texColor;
+		output.rgb /= hitCount;
 	}
 
 	function plane(p:vec3, d:vec3, p0:vec3, n:vec3):float {
@@ -302,3 +337,4 @@ program fragment {
 }
 
 ]]>
+
