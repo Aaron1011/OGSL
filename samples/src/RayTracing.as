@@ -60,9 +60,10 @@ package {
 			c3d.enableErrorChecking = true;
 			c3d.configureBackBuffer(WIDTH, HEIGHT, 0);
 
-			ogsl = new OGSL(function(s:String):void {
+			/*ogsl = new OGSL(function(s:String):void {
 				trace(s);
-			});
+			});*/
+                        ogsl = new OGSL();
 			ogsl.compile(OGSL_SOURCE);
 			ogsl.setContext3D(c3d);
 
